@@ -1,11 +1,43 @@
 import React from 'react';
-import { X, Printer, Calendar, Building2, CheckCircle2, FileText, Layers } from 'lucide-react';
+import { X, Printer, Calendar, Building2, CheckCircle2, FileText, Download } from 'lucide-react';
+import { PDFDownloadLink } from '@react-pdf/renderer';
+import InvoicePDF from './pdf/InvoicePDF';
 
 export default function ViewDocumentModal({ isOpen, onClose, document }) {
   if (!isOpen || !document) return null;
 
   const handlePrint = () => {
     window.print();
+  };
+
+  // Support both snake_case (PostgreSQL default) and camelCase properties
+  const docType = document.doc_type || document.docType || 'Document';
+  const scopeOverview = document.scope_overview || document.scopeOverview;
+
+  const pdfData = {
+    invoiceNo: document.id,
+    invoiceDate: document.date,
+    clientName: document.client,
+    clientAddress: document.client_address || [
+      'Client Address Line 1',
+      'Line 2'
+    ],
+    items: document.deliverables && document.deliverables.length > 0 
+      ? document.deliverables.map(d => ({
+          description: d.deliverable || d.description || d.detail || 'Service Item',
+          amount: d.amount || 'PHP 0.00'
+        }))
+      : [],
+    totalAmount: document.total_amount || document.totalAmount || 'PHP 0.00',
+    paymentDetails: document.payment_details || document.paymentDetails || [
+      'Bank Account #1 No',
+      'Account Name'
+    ],
+    issuer: {
+      name: 'Lynyrd Andres',
+      position: 'Business position here, Polenlyn IT Solutions',
+      contact: 'contact number here | email here'
+    }
   };
 
   return (
@@ -24,12 +56,28 @@ export default function ViewDocumentModal({ isOpen, onClose, document }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            
+            {/* Live Vector PDF Generator Download */}
+            <PDFDownloadLink
+              document={<InvoicePDF data={pdfData} />}
+              fileName={`Invoice_${document.id || 'Draft'}.pdf`}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white transition-colors"
+            >
+              {({ loading }) => (
+                <>
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{loading ? 'Preparing PDF...' : 'Download PDF'}</span>
+                </>
+              )}
+            </PDFDownloadLink>
+
             <button 
               onClick={handlePrint}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-800 text-xs font-mono uppercase text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
             >
-              <Printer className="w-3.5 h-3.5" /> Print / PDF
+              <Printer className="w-3.5 h-3.5" /> Print
             </button>
+            
             <button 
               onClick={onClose}
               className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
@@ -49,7 +97,7 @@ export default function ViewDocumentModal({ isOpen, onClose, document }) {
                 Polenlyn Solution
               </span>
               <h1 className="font-heading font-bold text-xl text-white print:text-slate-900">
-                {document.docType}
+                {docType}
               </h1>
               <span className="font-mono text-xs text-slate-400 print:text-slate-600 block mt-1">
                 Ref ID: {document.id}
@@ -90,14 +138,14 @@ export default function ViewDocumentModal({ isOpen, onClose, document }) {
               Executive Summary & Scope Overview
             </h3>
             <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/40 border border-slate-800/60 p-4 rounded-xl print:bg-transparent print:border-slate-200 print:text-slate-700">
-              {document.scopeOverview || 'This technical document defines the scope of work, technical architecture, and milestone deliverables agreed upon for this engagement.'}
+              {scopeOverview || 'This technical document defines the scope of work, technical architecture, and milestone deliverables agreed upon for this engagement.'}
             </p>
           </div>
 
-          {/* Itemized Deliverables */}
+          {/* Itemized Deliverables / Line Items */}
           <div className="space-y-3">
             <h3 className="text-xs font-mono uppercase font-semibold text-slate-300 print:text-slate-800">
-              Scope Deliverables
+              Scope Deliverables & Financial Details
             </h3>
 
             <div className="space-y-2">
@@ -105,17 +153,22 @@ export default function ViewDocumentModal({ isOpen, onClose, document }) {
                 document.deliverables.map((item, idx) => (
                   <div 
                     key={item.id || idx} 
-                    className="bg-slate-950/80 border border-slate-800 p-3.5 rounded-xl space-y-1 print:border-slate-200 print:bg-slate-50"
+                    className="bg-slate-950/80 border border-slate-800 p-3.5 rounded-xl space-y-1 print:border-slate-200 print:bg-slate-50 flex justify-between items-center"
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-xs text-slate-100 print:text-slate-900">
-                        0{idx + 1}. {item.deliverable || 'Scope Deliverable'}
+                    <div>
+                      <span className="font-bold text-xs text-slate-100 print:text-slate-900 block">
+                        0{idx + 1}. {item.deliverable || item.description || 'Scope Deliverable'}
                       </span>
+                      {item.detail && (
+                        <p className="text-xs text-slate-400 print:text-slate-600 mt-0.5">
+                          {item.detail}
+                        </p>
+                      )}
                     </div>
-                    {item.detail && (
-                      <p className="text-xs text-slate-400 print:text-slate-600 pl-4 border-l-2 border-blue-500/50">
-                        {item.detail}
-                      </p>
+                    {item.amount && (
+                      <span className="font-mono text-xs font-bold text-blue-400 print:text-slate-900">
+                        {item.amount}
+                      </span>
                     )}
                   </div>
                 ))
@@ -125,6 +178,18 @@ export default function ViewDocumentModal({ isOpen, onClose, document }) {
                 </div>
               )}
             </div>
+
+            {/* Total Amount Display */}
+            {(document.total_amount || document.totalAmount) && (
+              <div className="flex justify-between items-center bg-slate-950 border border-slate-800 p-3.5 rounded-xl mt-3 print:bg-slate-100">
+                <span className="text-xs font-mono uppercase font-bold text-slate-300 print:text-slate-800">
+                  Total Amount
+                </span>
+                <span className="text-xs font-mono font-bold text-emerald-400 print:text-slate-900">
+                  {document.total_amount || document.totalAmount}
+                </span>
+              </div>
+            )}
           </div>
 
         </div>

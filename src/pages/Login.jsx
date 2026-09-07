@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Lock, Mail, Eye, EyeOff, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff, ArrowRight, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -11,7 +12,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
 
@@ -22,12 +23,20 @@ export default function LoginPage() {
 
     setLoading(true);
 
-    // Mock authentication process
-    setTimeout(() => {
+    // Live Supabase Authentication
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (authError) {
+      setError(authError.message);
       setLoading(false);
-      // Redirect to the admin dashboard route
+    } else if (data.session) {
+      setLoading(false);
+      // Redirect to the admin dashboard on success
       navigate('/admin');
-    }, 1000);
+    }
   };
 
   return (
@@ -108,9 +117,6 @@ export default function LoginPage() {
                 <label className="block text-xs font-mono uppercase font-semibold text-slate-300">
                   Password
                 </label>
-                <a href="#reset" className="text-[11px] text-blue-400 hover:underline">
-                  Forgot?
-                </a>
               </div>
               <div className="relative">
                 <input 
@@ -135,10 +141,13 @@ export default function LoginPage() {
             <button 
               type="submit" 
               disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white font-semibold py-3 rounded-lg text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 pt-3"
+              className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900 text-white font-semibold py-3 rounded-lg text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"
             >
               {loading ? (
-                <span>Authenticating Credentials...</span>
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <span>Authenticating...</span>
+                </>
               ) : (
                 <>
                   <span>Authenticate Access</span>

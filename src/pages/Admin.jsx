@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   FileText, 
@@ -10,10 +10,13 @@ import {
   Menu, 
   X, 
   ArrowUpRight,
-  FolderOpen
+  FolderOpen,
+  Loader2
 } from 'lucide-react';
 
+import { supabase } from '../lib/supabaseClient';
 import CreateDocumentModal from '../components/CreateDocumentModal';
+import CreateClientModal from '../components/CreateClientModal';
 import ViewDocumentModal from '../components/ViewDocumentModal';
 import DocumentTrackerTab from '../components/admin/DocumentTrackerTab';
 import ClientDirectoryTab from '../components/admin/ClientDirectoryTab';
@@ -23,54 +26,104 @@ export default function Admin() {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState('documents');
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // STEP 3: State for selected document preview
+  // Modals state
+  const [isDocModalOpen, setIsDocModalOpen] = useState(false);
+  const [isClientModalOpen, setIsClientModalOpen] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState(null);
 
-  // Document & Scope Proposal Records State
-  const [documents, setDocuments] = useState([
-    { 
-      id: 'DOC-2026-001', 
-      client: 'Acme Enterprise', 
-      docType: 'Project Proposal', 
-      status: 'Approved', 
-      date: 'Sep 02, 2026',
-      scopeOverview: 'Custom web application platform with tailored administrative tools and secure dashboard functionality.',
-      deliverables: [
-        { id: 1, deliverable: 'Frontend Single-Page React App', detail: 'Tailwind CSS UI styling, Vite build configuration, responsive design.' },
-        { id: 2, deliverable: 'Admin Record Engine', detail: 'Tabbed navigation, document creation modals, and client directory table.' }
-      ]
-    },
-    { 
-      id: 'DOC-2026-002', 
-      client: 'Nexus Digital', 
-      docType: 'Scope of Work (SOW)', 
-      status: 'In Review', 
-      date: 'Sep 04, 2026',
-      scopeOverview: 'High-performance digital marketing website redesign and performance optimization.',
-      deliverables: [
-        { id: 1, deliverable: 'Landing Page Redesign', detail: 'Typewriter dynamic hero header, services grid layout, custom section themes.' }
-      ]
-    },
-    { id: 'DOC-2026-003', client: 'Vanguard Partners', docType: 'Accomplishment Report', status: 'Pending Approval', date: 'Sep 05, 2026' },
-    { id: 'DOC-2026-004', client: 'Apex Technologies', docType: 'Technical Scope', status: 'Approved', date: 'Aug 28, 2026' },
-  ]);
+  // Database State
+  const [documents, setDocuments] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [userProfile, setUserProfile] = useState(null);
 
-  // Client Directory Records State
-  const [clients] = useState([
-    { id: 'CLI-001', name: 'Acme Enterprise', contact: 'contact@acme.com', industry: 'Logistics', status: 'Active' },
-    { id: 'CLI-002', name: 'Nexus Digital', contact: 'tech@nexus.io', industry: 'SaaS', status: 'Active' },
-    { id: 'CLI-003', name: 'Vanguard Partners', contact: 'info@vanguard.com', industry: 'Finance', status: 'Onboarding' },
-    { id: 'CLI-004', name: 'Aventus Health', contact: 'admin@aventus.ph', industry: 'Healthcare Network', status: 'Active' },
-    { id: 'CLI-005', name: 'Apex Technologies', contact: 'dev@apex.com', industry: 'E-Commerce', status: 'Inactive' },
-  ]);
+  // Fetch live records from Supabase on component mount
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
 
-  const handleSaveDocument = (newDoc) => {
-    setDocuments([newDoc, ...documents]);
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      // 1. Get logged-in user ID
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (user) {
+        // 2. Fetch matching row from public.profiles
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+
+        if (data) setUserProfile(data);
+      }
+    };
+
+    fetchUserProfile();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    setLoading(true);
+    try {
+      // 1. Fetch Documents
+      const { data: docsData, error: docsErr } = await supabase
+        .from('documents')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (docsErr) console.error('Error fetching documents:', docsErr);
+      else setDocuments(docsData || []);
+
+      // 2. Fetch Clients
+      const { data: clientsData, error: clientsErr } = await supabase
+        .from('clients')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (clientsErr) console.error('Error fetching clients:', clientsErr);
+      else setClients(clientsData || []);
+
+    } catch (err) {
+      console.error('Unexpected fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleLogout = () => {
+  // Save new document to Supabase
+  const handleSaveDocument = async (newDoc) => {
+    const { data, error } = await supabase
+      .from('documents')
+      .insert([newDoc])
+      .select();
+
+    if (error) {
+      // Detailed error logging
+      console.error('Error creating document:', error.message, error.details, error.hint);
+      alert(`Failed to save document: ${error.message}`);
+    } else if (data) {
+      setDocuments([data[0], ...documents]);
+    }
+  };
+
+  // Save new client to Supabase
+  const handleSaveClient = async (newClient) => {
+    const { data, error } = await supabase
+      .from('clients')
+      .insert([newClient])
+      .select();
+
+    if (error) {
+      console.error('Error creating client:', error);
+      alert('Failed to save client to Supabase');
+    } else if (data) {
+      setClients([data[0], ...clients]);
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     navigate('/login');
   };
 
@@ -84,8 +137,6 @@ export default function Admin() {
         } bg-slate-900 border-r border-slate-800 transition-all duration-300 flex flex-col justify-between fixed inset-y-0 left-0 z-30 md:static`}
       >
         <div className="space-y-6">
-          
-          {/* Brand Header */}
           <div className="h-16 border-b border-slate-800 flex items-center justify-between px-5">
             <Link to="/" className="flex items-center gap-3 overflow-hidden">
               <span className="w-3 h-3 bg-blue-500 rounded-sm shrink-0" />
@@ -103,7 +154,6 @@ export default function Admin() {
             </button>
           </div>
 
-          {/* Navigation Links */}
           <nav className="px-3 space-y-1">
             {[
               { id: 'documents', label: 'Document Tracking', icon: FileText },
@@ -128,10 +178,8 @@ export default function Admin() {
               );
             })}
           </nav>
-
         </div>
 
-        {/* Logout Button */}
         <div className="p-3 border-t border-slate-800">
           <button
             onClick={handleLogout}
@@ -162,20 +210,32 @@ export default function Admin() {
               <span>View Site</span>
               <ArrowUpRight className="w-3.5 h-3.5" />
             </Link>
-            <button 
-              onClick={() => setIsModalOpen(true)}
-              className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm transition-all"
-            >
-              <Plus className="w-4 h-4" />
-              <span>New Document</span>
-            </button>
+
+            {activeTab === 'documents' && (
+              <button 
+                onClick={() => setIsDocModalOpen(true)}
+                className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>New Document</span>
+              </button>
+            )}
+
+            {activeTab === 'clients' && (
+              <button 
+                onClick={() => setIsClientModalOpen(true)}
+                className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>New Client</span>
+              </button>
+            )}
           </div>
         </header>
 
         {/* Dashboard Body */}
         <main className="p-6 space-y-6 flex-1 overflow-y-auto">
           
-          {/* Quick Overview Cards */}
           <div className="grid sm:grid-cols-3 gap-4">
             <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl space-y-1">
               <span className="text-xs font-mono text-slate-400 uppercase">Active Documents</span>
@@ -192,7 +252,7 @@ export default function Admin() {
               <div className="flex justify-between items-end pt-1">
                 <span className="font-heading font-bold text-2xl text-white">{clients.length}</span>
                 <span className="text-xs font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800/50 px-2 py-0.5 rounded">
-                  4 Active
+                  {clients.filter(c => c.status === 'Active').length} Active
                 </span>
               </div>
             </div>
@@ -210,7 +270,6 @@ export default function Admin() {
             </div>
           </div>
 
-          {/* Search Bar */}
           <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-xl flex items-center justify-between">
             <div className="relative w-full sm:w-80">
               <input 
@@ -222,28 +281,47 @@ export default function Admin() {
             </div>
           </div>
 
-          {/* TAB CONTENT (STEP 3: Passing onSelectDocument) */}
-          {activeTab === 'documents' && (
-            <DocumentTrackerTab 
-              documents={documents} 
-              onSelectDocument={(doc) => setSelectedDocument(doc)} 
-            />
+          {/* Loading Indicator */}
+          {loading ? (
+            <div className="flex justify-center items-center py-20 text-slate-500 gap-2">
+              <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+              <span className="text-xs font-mono">Fetching database records...</span>
+            </div>
+          ) : (
+            <>
+              {activeTab === 'documents' && (
+                <DocumentTrackerTab 
+                  documents={documents} 
+                  onSelectDocument={(doc) => setSelectedDocument(doc)} 
+                />
+              )}
+              {activeTab === 'clients' && <ClientDirectoryTab clients={clients} />}
+              {activeTab === 'settings' && (
+                <SettingsTab 
+                  userProfile={userProfile} 
+                  onProfileUpdate={(updated) => setUserProfile(updated)} 
+                />
+              )}
+            </>
           )}
-          {activeTab === 'clients' && <ClientDirectoryTab clients={clients} />}
-          {activeTab === 'settings' && <SettingsTab />}
 
         </main>
       </div>
 
-      {/* Create Document Modal Component */}
+      {/* Modals */}
       <CreateDocumentModal 
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        isOpen={isDocModalOpen}
+        onClose={() => setIsDocModalOpen(false)}
         onSave={handleSaveDocument}
         clients={clients}
       />
 
-      {/* STEP 4: View Document Preview Modal */}
+      <CreateClientModal 
+        isOpen={isClientModalOpen}
+        onClose={() => setIsClientModalOpen(false)}
+        onSave={handleSaveClient}
+      />
+
       <ViewDocumentModal 
         isOpen={!!selectedDocument}
         onClose={() => setSelectedDocument(null)}
